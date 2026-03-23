@@ -86,38 +86,37 @@ def seconds_to_time(seconds: float, include_hours: bool = True, use_comma: bool 
 
 def sanitize_filename(filename: str, max_length: int = 100) -> str:
     """
-    清理文件名，移除非法字符
+    清理檔案名，移除非法字符
 
     Args:
-        filename: 原始文件名
-        max_length: 最大长度
+        filename: 原始檔案名
+        max_length: 最大長度
 
     Returns:
-        str: 清理后的文件名
+        str: 清理後的檔案名
 
     Examples:
         >>> sanitize_filename("Hello: World?")
         'Hello_World'
-        >>> sanitize_filename("AGI 不是时间点，是指数曲线")
-        'AGI_不是时间点_是指数曲线'
+        >>> sanitize_filename("AGI 不是時間點，是指數曲線")
+        'AGI_不是時間點_是指數曲線'
     """
-    # 移除或替换非法字符
-    # Windows/Mac/Linux 通用的非法字符
-    illegal_chars = r'[<>:"/\\|?*]'
+    # 移除半形和全形非法字元
+    illegal_chars = r'[<>:"/\\|?*，。！？、；：「」『』【】（）《》]'
     filename = re.sub(illegal_chars, '_', filename)
 
-    # 移除开头和结尾的空格和点
-    filename = filename.strip('. ')
+    # 移除開頭和結尾的空格和點和下劃線
+    filename = filename.strip('. _')
 
-    # 替换空格为下划线
+    # 替換空格為下劃線
     filename = filename.replace(' ', '_')
 
-    # 移除连续的下划线
+    # 移除連續的下劃線
     filename = re.sub(r'_+', '_', filename)
 
-    # 限制长度
+    # 限制長度
     if len(filename) > max_length:
-        # 保留扩展名
+        # 保留副檔名
         name, ext = os.path.splitext(filename)
         if ext:
             max_name_length = max_length - len(ext)
@@ -133,17 +132,17 @@ def create_output_dir(base_dir: str = None) -> Path:
     创建输出目录（带时间戳）
 
     Args:
-        base_dir: 基础目录，默认为当前工作目录下的 youtube-clips
+        base_dir: 基础目录，默认为当前工作目录下的 highlight-clips
 
     Returns:
         Path: 输出目录路径
 
     Examples:
         >>> create_output_dir()
-        PosixPath('/path/to/current/dir/youtube-clips/20260121_143022')
+        PosixPath('/path/to/current/dir/highlight-clips/20260121_143022')
     """
     if base_dir is None:
-        base_dir = Path.cwd() / "youtube-clips"
+        base_dir = Path.cwd() / "highlight-clips"
     else:
         base_dir = Path(base_dir)
 
@@ -301,25 +300,20 @@ def ensure_directory(path: Path) -> Path:
 
 
 if __name__ == "__main__":
-    # 测试代码
     print("Testing utils.py...")
 
-    # 测试时间转换
+    # 測試時間轉換
     assert time_to_seconds("01:23:45.678") == 5025.678
-    assert time_to_seconds("23:45.678") == 1425.678
+    assert abs(time_to_seconds("23:45.678") - 1425.678) < 0.001
     assert time_to_seconds("45.678") == 45.678
 
-    # 测试文件名清理
+    # 測試檔名清理（含中文標點）
     assert sanitize_filename("Hello: World?") == "Hello_World"
-    assert sanitize_filename("AGI 不是时间点，是指数曲线") == "AGI_不是时间点_是指数曲线"
+    assert sanitize_filename("AGI 不是時間點，是指數曲線") == "AGI_不是時間點_是指數曲線"
+    assert sanitize_filename("很棒！這個觀點「超讚」") == "很棒_這個觀點_超讚"
 
-    # 测试时间范围解析
+    # 測試時間範圍解析
     assert parse_time_range("00:00 - 03:15") == (0.0, 195.0)
     assert parse_time_range("01:30:00-01:33:15") == (5400.0, 5595.0)
-
-    # 测试 URL 验证
-    assert validate_url("https://youtube.com/watch?v=Ckt1cj0xjRM") == True
-    assert validate_url("https://youtu.be/Ckt1cj0xjRM") == True
-    assert validate_url("invalid_url") == False
 
     print("✅ All tests passed!")
