@@ -23,7 +23,8 @@ def clip_video(
     start_time: Union[str, float],
     end_time: Union[str, float],
     output_path: str,
-    ffmpeg_path: str = None
+    ffmpeg_path: str = None,
+    reencode: bool = False
 ) -> str:
     """
     剪辑视频片段
@@ -34,6 +35,7 @@ def clip_video(
         end_time: 结束时间（秒数或时间字符串）
         output_path: 输出视频路径
         ffmpeg_path: FFmpeg 可执行文件路径（可选）
+        reencode: 是否使用重新编码模式（精确切割，适合短片段）
 
     Returns:
         str: 输出视频路径
@@ -83,17 +85,32 @@ def clip_video(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # 构建 FFmpeg 命令
-    # 使用 -ss 和 -t 进行精确剪辑
-    # -c copy: 直接复制流，不重新编码（快速且无损）
-    cmd = [
-        ffmpeg_path,
-        '-ss', str(start_seconds),  # 起始时间
-        '-i', str(video_path),       # 输入文件
-        '-t', str(duration),         # 持续时间
-        '-c', 'copy',                # 直接复制，不重新编码
-        '-y',                        # 覆盖输出文件
-        str(output_path)
-    ]
+    if reencode:
+        # 重新编码模式：精确切割，适合短片段（15-90秒）
+        cmd = [
+            ffmpeg_path,
+            '-ss', str(start_seconds),
+            '-i', str(video_path),
+            '-t', str(duration),
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '18',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-y',
+            str(output_path)
+        ]
+    else:
+        # 直接复制模式：快速但可能不精确
+        cmd = [
+            ffmpeg_path,
+            '-ss', str(start_seconds),
+            '-i', str(video_path),
+            '-t', str(duration),
+            '-c', 'copy',
+            '-y',
+            str(output_path)
+        ]
 
     print(f"   执行 FFmpeg...")
 
@@ -204,25 +221,28 @@ def save_subtitles_as_srt(subtitles: list, output_path: str):
 def main():
     """命令行入口"""
     if len(sys.argv) < 5:
-        print("Usage: python clip_video.py <video> <start_time> <end_time> <output>")
+        print("Usage: python clip_video.py <video> <start_time> <end_time> <output> [--reencode]")
         print("\nArguments:")
         print("  video      - 输入视频文件路径")
         print("  start_time - 起始时间（秒数或时间字符串，如 00:01:30）")
         print("  end_time   - 结束时间（秒数或时间字符串）")
         print("  output     - 输出视频文件路径")
+        print("  --reencode - 使用重新编码模式（精确切割，较慢）")
         print("\nExample:")
         print("  python clip_video.py input.mp4 0 195 output.mp4")
         print("  python clip_video.py input.mp4 00:00:00 00:03:15 output.mp4")
         print("  python clip_video.py input.mp4 01:30:00 01:33:15 output.mp4")
+        print("  python clip_video.py input.mp4 0 30 output.mp4 --reencode")
         sys.exit(1)
 
     video_path = sys.argv[1]
     start_time = sys.argv[2]
     end_time = sys.argv[3]
     output_path = sys.argv[4]
+    reencode = '--reencode' in sys.argv
 
     try:
-        result_path = clip_video(video_path, start_time, end_time, output_path)
+        result_path = clip_video(video_path, start_time, end_time, output_path, reencode=reencode)
         print(f"\n✨ 完成！输出文件: {result_path}")
 
     except Exception as e:
