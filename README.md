@@ -1,37 +1,16 @@
-# YouTube Clipper Skill
+# Local Highlight Clipper
 
-> AI-powered YouTube video clipper for Claude Code. Download videos, generate semantic chapters, clip segments, translate subtitles to bilingual format, and burn subtitles into videos.
+> AI 驅動的本地影片精華剪輯工具，專為 Claude Code 設計。從直播錄影中自動辨識精華片段，剪輯為 Reels 風格短片，並自動生成和燒錄中文字幕。
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+## 功能
 
-English | [简体中文](README.zh-CN.md)
+- **Whisper 語音轉錄** — 自動將影片語音轉為 SRT 字幕（支援 GPU 加速）
+- **AI 精華分析** — Claude AI 語義分析找出金句、知識點、情緒高點等精華片段
+- **精確剪輯** — FFmpeg re-encode 模式確保 15-90 秒短片的精確切割
+- **字幕燒錄** — 自動將字幕硬編碼到影片中
+- **字幕後處理** — 合併短字幕、移除語氣詞、修正時間戳重疊
 
-[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Requirements](#requirements) • [Configuration](#configuration) • [Troubleshooting](#troubleshooting)
-
----
-
-## Features
-
-- **AI Semantic Analysis** - Generate fine-grained chapters (2-5 minutes each) by understanding video content, not just mechanical time splitting
-- **Precise Clipping** - Use FFmpeg to extract video segments with frame-accurate timing
-- **Bilingual Subtitles** - Batch translate subtitles to Chinese/English with 95% API call reduction
-- **Subtitle Burning** - Hardcode bilingual subtitles into videos with customizable styling
-- **Content Summarization** - Auto-generate social media content (Xiaohongshu, Douyin, WeChat)
-
----
-
-## Installation
-
-### Option 1: npx skills (Recommended)
-
-```bash
-npx skills add https://github.com/op7418/Youtube-clipper-skill
-```
-
-This command will automatically install the skill to `~/.claude/skills/youtube-clipper/`.
-
-### Option 2: Manual Installation
+## 安裝
 
 ```bash
 git clone https://github.com/op7418/Youtube-clipper-skill.git
@@ -39,281 +18,38 @@ cd Youtube-clipper-skill
 bash install_as_skill.sh
 ```
 
-The install script will:
-- Copy files to `~/.claude/skills/youtube-clipper/`
-- Install Python dependencies (yt-dlp, pysrt, python-dotenv)
-- Check system dependencies (Python, yt-dlp, FFmpeg)
-- Create `.env` configuration file
+安裝腳本會：
+- 複製檔案到 `~/.claude/skills/local-highlight-clipper/`
+- 安裝 Python 依賴（openai-whisper、pysrt）
+- 檢測系統依賴（FFmpeg、Whisper）
 
----
+## 系統需求
 
-## Requirements
+| 依賴 | 用途 | 安裝方式 |
+|------|------|----------|
+| Python 3.8+ | 腳本執行 | 預裝 |
+| FFmpeg (含 libass) | 影片剪輯 + 字幕燒錄 | `brew install ffmpeg` |
+| Whisper | 語音轉文字 | `pip install openai-whisper` |
 
-### System Dependencies
+## 使用方式
 
-| Dependency | Version | Purpose | Installation |
-|------------|---------|---------|--------------|
-| **Python** | 3.8+ | Script execution | [python.org](https://www.python.org/downloads/) |
-| **yt-dlp** | Latest | YouTube download | `brew install yt-dlp` (macOS)<br>`sudo apt install yt-dlp` (Ubuntu)<br>`pip install yt-dlp` (pip) |
-| **FFmpeg with libass** | Latest | Video processing & subtitle burning | `brew install ffmpeg-full` (macOS)<br>`sudo apt install ffmpeg libass-dev` (Ubuntu) |
-
-### Python Packages
-
-These are automatically installed by the install script:
-- `yt-dlp` - YouTube downloader
-- `pysrt` - SRT subtitle parser
-- `python-dotenv` - Environment variable management
-
-### Important: FFmpeg libass Support
-
-**macOS users**: The standard `ffmpeg` package from Homebrew does NOT include libass support (required for subtitle burning). You must install `ffmpeg-full`:
-
-```bash
-# Remove standard ffmpeg (if installed)
-brew uninstall ffmpeg
-
-# Install ffmpeg-full (includes libass)
-brew install ffmpeg-full
-```
-
-**Verify libass support**:
-```bash
-ffmpeg -filters 2>&1 | grep subtitles
-# Should output: subtitles    V->V  (...)
-```
-
----
-
-## Usage
-
-### In Claude Code
-
-Simply tell Claude to clip a YouTube video:
+在 Claude Code 中輸入：
 
 ```
-Clip this YouTube video: https://youtube.com/watch?v=VIDEO_ID
+幫我把這個直播錄影剪成精華片段：/path/to/video.mp4
 ```
 
-or
+工具會自動：
+1. 檢測環境依賴
+2. 用 Whisper 轉錄語音為字幕
+3. AI 分析找出精華片段
+4. 讓你選擇要剪的段落
+5. 自動剪輯 + 燒錄字幕
 
-```
-剪辑这个 YouTube 视频：https://youtube.com/watch?v=VIDEO_ID
-```
+## 支援格式
 
-### Workflow
-
-1. **Environment Check** - Verifies yt-dlp, FFmpeg, and Python dependencies
-2. **Video Download** - Downloads video (up to 1080p) and English subtitles
-3. **AI Chapter Analysis** - Claude analyzes subtitles to generate semantic chapters (2-5 min each)
-4. **User Selection** - Choose which chapters to clip and processing options
-5. **Processing** - Clips video, translates subtitles, burns subtitles (if requested)
-6. **Output** - Organized files in `./youtube-clips/<timestamp>/`
-
-### Output Files
-
-For each clipped chapter:
-
-```
-./youtube-clips/20260122_143022/
-└── Chapter_Title/
-    ├── Chapter_Title_clip.mp4              # Original clip (no subtitles)
-    ├── Chapter_Title_with_subtitles.mp4    # With burned subtitles
-    ├── Chapter_Title_bilingual.srt         # Bilingual subtitle file
-    └── Chapter_Title_summary.md            # Social media content
-```
-
----
-
-## Configuration
-
-The skill uses environment variables for customization. Edit `~/.claude/skills/youtube-clipper/.env`:
-
-### Key Settings
-
-```bash
-# FFmpeg path (auto-detected if empty)
-FFMPEG_PATH=
-
-# Output directory (default: current working directory)
-OUTPUT_DIR=./youtube-clips
-
-# Video quality limit (720, 1080, 1440, 2160)
-MAX_VIDEO_HEIGHT=1080
-
-# Translation batch size (20-25 recommended)
-TRANSLATION_BATCH_SIZE=20
-
-# Target language for translation
-TARGET_LANGUAGE=中文
-
-# Target chapter duration in seconds (180-300 recommended)
-TARGET_CHAPTER_DURATION=180
-```
-
-For full configuration options, see [.env.example](.env.example).
-
----
-
-## Examples
-
-### Example 1: Extract highlights from a tech interview
-
-**Input**:
-```
-Clip this video: https://youtube.com/watch?v=Ckt1cj0xjRM
-```
-
-**Output** (AI-generated chapters):
-```
-1. [00:00 - 03:15] AGI as an exponential curve, not a point in time
-2. [03:15 - 06:30] China's gap in AI development
-3. [06:30 - 09:45] The impact of chip bans
-...
-```
-
-**Result**: Select chapters → Get clipped videos with bilingual subtitles + social media content
-
-### Example 2: Create short clips from a course
-
-**Input**:
-```
-Clip this lecture video and create bilingual subtitles: https://youtube.com/watch?v=LECTURE_ID
-```
-
-**Options**:
-- Generate bilingual subtitles: Yes
-- Burn subtitles into video: Yes
-- Generate summary: Yes
-
-**Result**: High-quality clips ready for sharing on social media platforms
-
----
-
-## Key Differentiators
-
-### AI Semantic Chapter Analysis
-
-Unlike mechanical time-based splitting, this skill uses Claude's AI to:
-- Understand content semantics
-- Identify natural topic transitions
-- Generate meaningful chapter titles and summaries
-- Ensure complete coverage with no gaps
-
-**Example**:
-```
-❌ Mechanical splitting: [0:00-30:00], [30:00-60:00]
-✅ AI semantic analysis:
-   - [00:00-03:15] AGI definition
-   - [03:15-07:30] China's AI landscape
-   - [07:30-12:00] Chip ban impacts
-```
-
-### Batch Translation Optimization
-
-Translates 20 subtitles at once instead of one-by-one:
-- 95% reduction in API calls
-- 10x faster translation
-- Better translation consistency
-
-### Bilingual Subtitle Format
-
-Generated subtitle files contain both English and Chinese:
-
-```srt
-1
-00:00:00,000 --> 00:00:03,500
-This is the English subtitle
-这是中文字幕
-
-2
-00:00:03,500 --> 00:00:07,000
-Another English line
-另一行中文
-```
-
----
-
-## Troubleshooting
-
-### FFmpeg subtitle burning fails
-
-**Error**: `Option not found: subtitles` or `filter not found`
-
-**Solution**: Install `ffmpeg-full` (macOS) or ensure `libass-dev` is installed (Ubuntu):
-```bash
-# macOS
-brew uninstall ffmpeg
-brew install ffmpeg-full
-
-# Ubuntu
-sudo apt install ffmpeg libass-dev
-```
-
-### Video download is slow
-
-**Solution**: Set a proxy in `.env`:
-```bash
-YT_DLP_PROXY=http://proxy-server:port
-# or
-YT_DLP_PROXY=socks5://proxy-server:port
-```
-
-### Subtitle translation fails
-
-**Cause**: API rate limiting or network issues
-
-**Solution**: The skill automatically retries up to 3 times. If persistent, check:
-- Network connectivity
-- Claude API status
-- Reduce `TRANSLATION_BATCH_SIZE` in `.env`
-
-### Special characters in filenames
-
-**Issue**: Filenames with `:`, `/`, `?`, etc. may cause errors
-
-**Solution**: The skill automatically sanitizes filenames by:
-- Removing special characters: `/ \ : * ? " < > |`
-- Replacing spaces with underscores
-- Limiting length to 100 characters
-
----
-
-## Documentation
-
-- **[SKILL.md](SKILL.md)** - Complete workflow and technical details
-- **[TECHNICAL_NOTES.md](TECHNICAL_NOTES.md)** - Implementation notes and design decisions
-- **[FIXES_AND_IMPROVEMENTS.md](FIXES_AND_IMPROVEMENTS.md)** - Changelog and bug fixes
-- **[references/](references/)** - FFmpeg, yt-dlp, and subtitle formatting guides
-
----
-
-## Contributing
-
-Contributions are welcome! Please:
-- Report bugs via [GitHub Issues](https://github.com/op7418/Youtube-clipper-skill/issues)
-- Submit feature requests
-- Open pull requests for improvements
-
----
+mp4、mkv、mov、flv、ts、webm
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## Acknowledgements
-
-- **[Claude Code](https://claude.ai/claude-code)** - The AI-powered CLI tool
-- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** - YouTube download engine
-- **[FFmpeg](https://ffmpeg.org/)** - Video processing powerhouse
-
----
-
-<div align="center">
-
-**Made with ❤️ by [op7418](https://github.com/op7418)**
-
-If this skill helps you, please give it a ⭐️
-
-</div>
+MIT
