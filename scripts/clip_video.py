@@ -18,13 +18,79 @@ from utils import (
 )
 
 
+def get_video_dimensions(video_path: str, ffmpeg_path: str = None) -> tuple:
+    """
+    取得影片的寬高
+
+    Returns:
+        tuple: (width, height)
+    """
+    ffprobe_path = None
+    if ffmpeg_path:
+        ffprobe_path = ffmpeg_path.replace('ffmpeg', 'ffprobe')
+    if not ffprobe_path or not Path(ffprobe_path).exists():
+        ffprobe_path = shutil.which('ffprobe')
+    if not ffprobe_path:
+        raise RuntimeError("ffprobe not found")
+
+    cmd = [
+        ffprobe_path,
+        '-v', 'error',
+        '-select_streams', 'v:0',
+        '-show_entries', 'stream=width,height',
+        '-of', 'csv=p=0',
+        str(video_path)
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe failed: {result.stderr}")
+
+    parts = result.stdout.strip().split(',')
+    return int(parts[0]), int(parts[1])
+
+
+def build_crop_filter(width: int, height: int, crop_position: str) -> str:
+    """
+    建立 9:16 裁切濾鏡
+
+    Args:
+        width: 原始影片寬度
+        height: 原始影片高度
+        crop_position: 裁切位置（left/right/center）
+
+    Returns:
+        str: FFmpeg crop 濾鏡字串
+    """
+    # 目標比例 9:16，保持原始高度
+    crop_width = int(height * 9 / 16)
+    # 確保寬度為偶數（FFmpeg 要求）
+    crop_width = crop_width - (crop_width % 2)
+
+    if crop_width >= width:
+        # 影片已經比 9:16 窄，不需裁切
+        return None
+
+    if crop_position == 'left':
+        x = int(width * 0.05)  # 稍微留一點邊距
+    elif crop_position == 'right':
+        x = width - crop_width - int(width * 0.05)
+    else:  # center
+        x = (width - crop_width) // 2
+
+    # 確保 x 不超出範圍
+    x = max(0, min(x, width - crop_width))
+
+    return f"crop={crop_width}:{height}:{x}:0"
+
+
 def clip_video(
     video_path: str,
     start_time: Union[str, float],
     end_time: Union[str, float],
     output_path: str,
     ffmpeg_path: str = None,
-    reencode: bool = False
+    reencode: bool = False,
+    crop_position: str = None
 ) -> str:
     """
     剪辑视频片段
@@ -36,6 +102,7 @@ def clip_video(
         output_path: 输出视频路径
         ffmpeg_path: FFmpeg 可执行文件路径（可选）
         reencode: 是否使用重新编码模式（精确切割，适合短片段）
+        crop_position: 9:16 裁切位置（left/right/center），None 表示不裁切
 
     Returns:
         str: 输出视频路径
@@ -84,14 +151,31 @@ def clip_video(
     # 创建输出目录
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 构建 FFmpeg 命令
+    # 建立裁切濾鏡（如果需要）
+    crop_filter = None
+    if crop_position:
+        w, h = get_video_dimensions(str(video_path), ffmpeg_path)
+        crop_filter = build_crop_filter(w, h, crop_position)
+        if crop_filter:
+            print(f"   裁切: 9:16 直式（{crop_position}）")
+            # 裁切必須使用 reencode 模式
+            reencode = True
+
+    # 構建 FFmpeg 命令
     if reencode:
-        # 重新编码模式：精确切割，适合短片段（15-90秒）
+        vf_filters = []
+        if crop_filter:
+            vf_filters.append(crop_filter)
+
         cmd = [
             ffmpeg_path,
             '-ss', str(start_seconds),
             '-i', str(video_path),
             '-t', str(duration),
+        ]
+        if vf_filters:
+            cmd.extend(['-vf', ','.join(vf_filters)])
+        cmd.extend([
             '-c:v', 'libx264',
             '-preset', 'fast',
             '-crf', '18',
@@ -99,9 +183,9 @@ def clip_video(
             '-b:a', '192k',
             '-y',
             str(output_path)
-        ]
+        ])
     else:
-        # 直接复制模式：快速但可能不精确
+        # 直接複製模式：快速但可能不精確
         cmd = [
             ffmpeg_path,
             '-ss', str(start_seconds),
@@ -221,18 +305,16 @@ def save_subtitles_as_srt(subtitles: list, output_path: str):
 def main():
     """命令行入口"""
     if len(sys.argv) < 5:
-        print("Usage: python clip_video.py <video> <start_time> <end_time> <output> [--reencode]")
+        print("Usage: python clip_video.py <video> <start> <end> <output> [--reencode] [--crop left|right|center]")
         print("\nArguments:")
-        print("  video      - 输入视频文件路径")
-        print("  start_time - 起始时间（秒数或时间字符串，如 00:01:30）")
-        print("  end_time   - 结束时间（秒数或时间字符串）")
-        print("  output     - 输出视频文件路径")
-        print("  --reencode - 使用重新编码模式（精确切割，较慢）")
+        print("  video      - 輸入影片檔案路徑")
+        print("  start      - 起始時間（秒數或時間字串，如 00:01:30）")
+        print("  end        - 結束時間")
+        print("  output     - 輸出影片檔案路徑")
+        print("  --reencode - 使用重新編碼模式（精確切割，較慢）")
+        print("  --crop     - 裁切為 9:16 直式（left/right/center）")
         print("\nExample:")
-        print("  python clip_video.py input.mp4 0 195 output.mp4")
-        print("  python clip_video.py input.mp4 00:00:00 00:03:15 output.mp4")
-        print("  python clip_video.py input.mp4 01:30:00 01:33:15 output.mp4")
-        print("  python clip_video.py input.mp4 0 30 output.mp4 --reencode")
+        print("  python clip_video.py input.mp4 0 30 output.mp4 --reencode --crop left")
         sys.exit(1)
 
     video_path = sys.argv[1]
@@ -241,9 +323,16 @@ def main():
     output_path = sys.argv[4]
     reencode = '--reencode' in sys.argv
 
+    crop_position = None
+    if '--crop' in sys.argv:
+        crop_idx = sys.argv.index('--crop')
+        if crop_idx + 1 < len(sys.argv):
+            crop_position = sys.argv[crop_idx + 1]
+
     try:
-        result_path = clip_video(video_path, start_time, end_time, output_path, reencode=reencode)
-        print(f"\n✨ 完成！输出文件: {result_path}")
+        result_path = clip_video(video_path, start_time, end_time, output_path,
+                                 reencode=reencode, crop_position=crop_position)
+        print(f"\n✨ 完成！輸出檔案: {result_path}")
 
     except Exception as e:
         print(f"\n❌ 错误: {str(e)}")
