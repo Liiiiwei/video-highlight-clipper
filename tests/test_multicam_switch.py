@@ -175,3 +175,53 @@ class TestMatchSpeakersToCameras:
             hop_ms=1000,
         )
         assert confidence < 0.6
+
+
+class TestGenerateSwitchList:
+    def test_basic_switch_list(self):
+        from multicam_switch import generate_switch_list
+        diarization = [
+            {'start': 0.0, 'end': 15.0, 'speaker': 'A'},
+            {'start': 15.0, 'end': 30.0, 'speaker': 'B'},
+            {'start': 30.0, 'end': 45.0, 'speaker': 'A'},
+        ]
+        speaker_map = {'A': 'cam1.mp4', 'B': 'cam2.mp4'}
+        result = generate_switch_list(diarization, speaker_map, min_segment=2.0)
+        assert len(result) == 3
+        assert result[0]['camera'] == 'cam1.mp4'
+        assert result[1]['camera'] == 'cam2.mp4'
+        assert result[0]['warning'] is None
+
+    def test_short_segment_warning(self):
+        from multicam_switch import generate_switch_list
+        diarization = [
+            {'start': 0.0, 'end': 15.0, 'speaker': 'A'},
+            {'start': 15.0, 'end': 16.5, 'speaker': 'B'},
+            {'start': 16.5, 'end': 30.0, 'speaker': 'A'},
+        ]
+        speaker_map = {'A': 'cam1.mp4', 'B': 'cam2.mp4'}
+        result = generate_switch_list(diarization, speaker_map, min_segment=2.0)
+        assert result[1]['warning'] is not None
+        assert '1.5' in result[1]['warning']
+
+    def test_single_speaker_no_switch(self):
+        from multicam_switch import generate_switch_list
+        diarization = [{'start': 0.0, 'end': 30.0, 'speaker': 'A'}]
+        speaker_map = {'A': 'cam1.mp4'}
+        result = generate_switch_list(diarization, speaker_map)
+        assert len(result) == 1
+        assert result[0]['warning'] is None
+
+
+class TestFormatSwitchList:
+    def test_display_format(self):
+        from multicam_switch import format_switch_list_display
+        switches = [
+            {'start': 0.0, 'end': 15.0, 'speaker': 'SPEAKER_00', 'camera': 'cam1.mp4', 'warning': None},
+            {'start': 15.0, 'end': 30.0, 'speaker': 'SPEAKER_01', 'camera': 'cam2.mp4', 'warning': '很短(1.5s)'},
+        ]
+        text = format_switch_list_display(switches)
+        assert 'cam1.mp4' in text
+        assert 'cam2.mp4' in text
+        assert '00:00' in text
+        assert '很短' in text

@@ -277,3 +277,51 @@ def match_speakers_to_cameras(diarization, audio_energies, hop_ms=50, manual_map
     overall_confidence = np.mean(confidences) if confidences else 0.0
 
     return speaker_map, round(float(overall_confidence), 3)
+
+
+def generate_switch_list(diarization, speaker_camera_map, min_segment=2.0):
+    switches = []
+    for seg in diarization:
+        camera = speaker_camera_map.get(seg['speaker'], list(speaker_camera_map.values())[0])
+        duration = seg['end'] - seg['start']
+        warning = None
+        if duration < min_segment:
+            warning = f"很短({duration:.1f}s)，建議併入前段"
+        switches.append({
+            'start': seg['start'], 'end': seg['end'],
+            'speaker': seg['speaker'], 'camera': camera, 'warning': warning,
+        })
+    return switches
+
+
+def format_switch_list_display(switches):
+    from utils import get_video_duration_display
+    lines = ["多機位切換清單：\n"]
+    lines.append(f"{'時間段':<24}{'說話者':<16}{'機位':<16}")
+    lines.append("-" * 56)
+    for sw in switches:
+        time_range = f"{get_video_duration_display(sw['start'])} - {get_video_duration_display(sw['end'])}"
+        line = f"{time_range:<24}{sw['speaker']:<16}{sw['camera']:<16}"
+        if sw['warning']:
+            line += f"⚠️ {sw['warning']}"
+        lines.append(line)
+    warnings = [sw for sw in switches if sw['warning']]
+    if warnings:
+        lines.append(f"\n⚠️ {len(warnings)} 個段落建議調整。")
+    return '\n'.join(lines)
+
+
+def save_switch_list_json(switches, cameras, offsets, speaker_map, confidence, output_path):
+    data = {
+        'version': 1, 'created_at': datetime.now().isoformat(),
+        'base_camera': cameras[0], 'cameras': cameras,
+        'offsets': offsets, 'speaker_map': speaker_map,
+        'match_confidence': confidence,
+        'switches': [
+            {'start': sw['start'], 'end': sw['end'], 'speaker': sw['speaker'], 'camera': sw['camera']}
+            for sw in switches
+        ],
+    }
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return output_path
