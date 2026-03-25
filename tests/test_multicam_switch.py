@@ -225,3 +225,45 @@ class TestFormatSwitchList:
         assert 'cam2.mp4' in text
         assert '00:00' in text
         assert '很短' in text
+
+
+class TestComposeVideo:
+    def test_builds_correct_ffmpeg_filter(self):
+        from multicam_switch import build_multicam_filter
+        switches = [
+            {'start': 0.0, 'end': 15.0, 'camera': 'cam1.mp4'},
+            {'start': 15.0, 'end': 30.0, 'camera': 'cam2.mp4'},
+        ]
+        video_inputs = {'cam1.mp4': 0, 'cam2.mp4': 1}
+        offsets = {'cam1.mp4': 0.0, 'cam2.mp4': 1.5}
+        filter_str, n_segments = build_multicam_filter(switches, video_inputs, offsets)
+        assert n_segments == 2
+        assert '[outv]' in filter_str
+        assert '[outa]' in filter_str
+        assert 'trim=start=16.5:end=31.5' in filter_str
+
+    def test_compose_with_synthetic_videos(self, tmp_path):
+        import subprocess, shutil
+        ffmpeg = shutil.which('ffmpeg')
+        if not ffmpeg:
+            pytest.skip("FFmpeg not installed")
+        cam1 = str(tmp_path / "cam1.mp4")
+        cam2 = str(tmp_path / "cam2.mp4")
+        output = str(tmp_path / "output.mp4")
+        for path, color in [(cam1, 'red'), (cam2, 'blue')]:
+            subprocess.run([
+                ffmpeg, '-f', 'lavfi', '-i', f'color=c={color}:size=320x240:duration=5',
+                '-f', 'lavfi', '-i', 'sine=frequency=440:duration=5',
+                '-c:v', 'libx264', '-preset', 'ultrafast',
+                '-c:a', 'aac', '-shortest', '-y', path
+            ], capture_output=True)
+        from multicam_switch import compose_video
+        switches = [
+            {'start': 0.0, 'end': 2.5, 'camera': 'cam1.mp4'},
+            {'start': 2.5, 'end': 5.0, 'camera': 'cam2.mp4'},
+        ]
+        video_paths = {'cam1.mp4': cam1, 'cam2.mp4': cam2}
+        offsets = {'cam1.mp4': 0.0, 'cam2.mp4': 0.0}
+        result = compose_video(switches, video_paths, offsets, output)
+        assert os.path.exists(result)
+        assert os.path.getsize(result) > 0

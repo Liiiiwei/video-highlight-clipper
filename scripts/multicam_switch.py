@@ -325,3 +325,55 @@ def save_switch_list_json(switches, cameras, offsets, speaker_map, confidence, o
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     return output_path
+
+
+def build_multicam_filter(switches, video_inputs, offsets):
+    filter_parts = []
+    n = len(switches)
+    for i, sw in enumerate(switches):
+        cam = sw['camera']
+        input_idx = video_inputs[cam]
+        offset = offsets.get(cam, 0.0)
+        actual_start = sw['start'] + offset
+        actual_end = sw['end'] + offset
+        filter_parts.append(
+            f"[{input_idx}:v]trim=start={actual_start}:end={actual_end},"
+            f"setpts=PTS-STARTPTS,scale=1920:1080:force_original_aspect_ratio=decrease,"
+            f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2[v{i}]"
+        )
+    base_input = video_inputs[list(video_inputs.keys())[0]]
+    for i, sw in enumerate(switches):
+        filter_parts.append(
+            f"[{base_input}:a]atrim=start={sw['start']}:end={sw['end']},"
+            f"asetpts=PTS-STARTPTS[a{i}]"
+        )
+    concat_inputs = ''.join(f'[v{i}][a{i}]' for i in range(n))
+    filter_parts.append(f"{concat_inputs}concat=n={n}:v=1:a=1[outv][outa]")
+    return ';'.join(filter_parts), n
+
+
+def compose_video(switch_list, video_paths, offsets, output_path):
+    ffmpeg = shutil.which('ffmpeg')
+    if not ffmpeg:
+        raise RuntimeError("FFmpeg 未安裝")
+    cam_names = list(video_paths.keys())
+    video_inputs = {name: i for i, name in enumerate(cam_names)}
+    filter_str, n_segments = build_multicam_filter(switch_list, video_inputs, offsets)
+    cmd = [ffmpeg]
+    for cam_name in cam_names:
+        cmd.extend(['-i', str(video_paths[cam_name])])
+    cmd.extend([
+        '-filter_complex', filter_str,
+        '-map', '[outv]', '-map', '[outa]',
+        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+        '-c:a', 'aac', '-b:a', '192k',
+        '-y', str(output_path)
+    ])
+    print(f"🎬 合成多機位影片（{n_segments} 段）...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"❌ FFmpeg 失敗:\n{result.stderr[-500:]}")
+        raise RuntimeError("FFmpeg compose failed")
+    output_size = Path(output_path).stat().st_size / (1024 * 1024)
+    print(f"✅ 合成完成: {output_path} ({output_size:.1f} MB)")
+    return str(output_path)
