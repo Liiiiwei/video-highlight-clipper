@@ -207,3 +207,73 @@ def slice_diarization(segments, clip_start, clip_end):
             })
 
     return result
+
+
+def compute_audio_energies(video_paths, offsets, total_duration, hop_ms=50):
+    """計算每個機位在統一時間軸上的能量包絡"""
+    n_hops = int(total_duration * 1000 / hop_ms)
+    energies = {}
+
+    for cam_name, path in video_paths.items():
+        envelope = extract_audio_envelope(path, hop_ms=hop_ms)
+        offset_hops = int(offsets.get(cam_name, 0) * 1000 / hop_ms)
+
+        aligned = np.zeros(n_hops)
+        src_start = max(0, -offset_hops)
+        dst_start = max(0, offset_hops)
+        length = min(len(envelope) - src_start, n_hops - dst_start)
+        if length > 0:
+            aligned[dst_start:dst_start + length] = envelope[src_start:src_start + length]
+
+        energies[cam_name] = aligned
+
+    return energies
+
+
+def match_speakers_to_cameras(diarization, audio_energies, hop_ms=50, manual_map=None):
+    """配對說話者到機位"""
+    if manual_map:
+        return manual_map.copy(), 1.0
+
+    speakers = list(set(seg['speaker'] for seg in diarization))
+    cam_names = list(audio_energies.keys())
+
+    speaker_cam_energy = {}
+    for speaker in speakers:
+        speaker_cam_energy[speaker] = {}
+        for cam_name, energy in audio_energies.items():
+            total_energy = 0.0
+            total_hops = 0
+            for seg in diarization:
+                if seg['speaker'] != speaker:
+                    continue
+                start_hop = int(seg['start'] * 1000 / hop_ms)
+                end_hop = int(seg['end'] * 1000 / hop_ms)
+                end_hop = min(end_hop, len(energy))
+                if end_hop > start_hop:
+                    total_energy += np.sum(energy[start_hop:end_hop])
+                    total_hops += end_hop - start_hop
+
+            avg = total_energy / max(total_hops, 1)
+            speaker_cam_energy[speaker][cam_name] = avg
+
+    speaker_map = {}
+    confidences = []
+
+    for speaker in speakers:
+        energies = speaker_cam_energy[speaker]
+        sorted_cams = sorted(energies.items(), key=lambda x: x[1], reverse=True)
+        best_cam, best_energy = sorted_cams[0]
+        second_energy = sorted_cams[1][1] if len(sorted_cams) > 1 else 0
+
+        speaker_map[speaker] = best_cam
+
+        if best_energy > 0:
+            ratio = (best_energy - second_energy) / best_energy
+            confidences.append(ratio)
+        else:
+            confidences.append(0.0)
+
+    overall_confidence = np.mean(confidences) if confidences else 0.0
+
+    return speaker_map, round(float(overall_confidence), 3)
