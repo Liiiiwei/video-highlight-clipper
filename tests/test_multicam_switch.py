@@ -67,3 +67,52 @@ class TestSyncCameras:
         )
         assert result['cam1.mp4'] == 0.0
         assert result['cam2.mp4'] == 1.5
+
+
+class TestDiarize:
+    """測試 speaker diarization"""
+
+    def test_returns_list_of_segments(self):
+        """diarize 應回傳段落列表"""
+        pytest.importorskip("pyannote.audio")
+        if not os.environ.get('HF_TOKEN'):
+            pytest.skip("HF_TOKEN not set")
+        from multicam_switch import diarize
+        assert callable(diarize)
+
+    def test_check_hf_token_missing(self):
+        """缺少 HF_TOKEN 應拋出清楚的錯誤訊息"""
+        from multicam_switch import check_diarization_ready
+        old_token = os.environ.pop('HF_TOKEN', None)
+        try:
+            ready, msg = check_diarization_ready()
+            assert not ready
+            assert 'HF_TOKEN' in msg
+        finally:
+            if old_token:
+                os.environ['HF_TOKEN'] = old_token
+
+
+class TestSliceDiarization:
+    """測試 diarization 結果切片"""
+
+    def test_slice_within_range(self):
+        """只保留指定時間範圍內的段落"""
+        from multicam_switch import slice_diarization
+
+        segments = [
+            {'start': 0.0, 'end': 10.0, 'speaker': 'A'},
+            {'start': 10.0, 'end': 20.0, 'speaker': 'B'},
+            {'start': 20.0, 'end': 30.0, 'speaker': 'A'},
+            {'start': 30.0, 'end': 40.0, 'speaker': 'B'},
+        ]
+        result = slice_diarization(segments, clip_start=5.0, clip_end=25.0)
+
+        assert len(result) == 3
+        assert result[0]['start'] == 0.0
+        assert result[0]['end'] == 5.0
+        assert result[0]['speaker'] == 'A'
+        assert result[1]['start'] == 5.0
+        assert result[1]['end'] == 15.0
+        assert result[2]['start'] == 15.0
+        assert result[2]['end'] == 20.0

@@ -121,3 +121,89 @@ def sync_cameras(video_paths, manual_offsets=None):
         print(f"   {cam_name}: 偏移 {fine_offset:.3f}s（相關度 {fine_corr:.3f}）")
 
     return offsets
+
+
+def check_diarization_ready():
+    """
+    檢查 diarization 所需的依賴和 token
+    回傳 (ready: bool, message: str)
+    """
+    if not os.environ.get('HF_TOKEN'):
+        return False, (
+            "需要 Hugging Face token (HF_TOKEN):\n"
+            "1. 到 https://huggingface.co/pyannote/speaker-diarization-3.1 同意使用條款\n"
+            "2. 建立 token: https://huggingface.co/settings/tokens\n"
+            "3. 設定: export HF_TOKEN=hf_xxxxx"
+        )
+
+    try:
+        import pyannote.audio
+    except ImportError:
+        return False, "pyannote-audio 未安裝。請執行: pip3 install pyannote-audio"
+
+    return True, "OK"
+
+
+def diarize(audio_path):
+    """
+    用 pyannote-audio 做 speaker diarization
+    回傳說話者分段列表
+    """
+    ready, msg = check_diarization_ready()
+    if not ready:
+        raise RuntimeError(msg)
+
+    from pyannote.audio import Pipeline
+    import torch
+
+    pipeline = Pipeline.from_pretrained(
+        "pyannote/speaker-diarization-3.1",
+        use_auth_token=os.environ['HF_TOKEN']
+    )
+
+    if torch.backends.mps.is_available():
+        pipeline.to(torch.device("mps"))
+
+    print(f"   執行 speaker diarization...")
+    diarization_result = pipeline(audio_path)
+
+    segments = []
+    for turn, _, speaker in diarization_result.itertracks(yield_label=True):
+        segments.append({
+            'start': round(turn.start, 3),
+            'end': round(turn.end, 3),
+            'speaker': speaker
+        })
+
+    merged = []
+    for seg in segments:
+        if merged and merged[-1]['speaker'] == seg['speaker']:
+            merged[-1]['end'] = seg['end']
+        else:
+            merged.append(seg.copy())
+
+    print(f"   偵測到 {len(set(s['speaker'] for s in merged))} 位說話者，{len(merged)} 個段落")
+    return merged
+
+
+def slice_diarization(segments, clip_start, clip_end):
+    """
+    從完整 diarization 結果中擷取指定時間範圍
+    時間重置為相對於 clip_start
+    """
+    result = []
+    for seg in segments:
+        if seg['end'] <= clip_start or seg['start'] >= clip_end:
+            continue
+
+        new_start = max(seg['start'], clip_start) - clip_start
+        new_end = min(seg['end'], clip_end) - clip_start
+
+        if new_end - new_start > 0.05:
+            result.append({
+                'start': round(new_start, 3),
+                'end': round(new_end, 3),
+                'speaker': seg['speaker']
+            })
+
+    return result
