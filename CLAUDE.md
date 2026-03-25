@@ -124,6 +124,25 @@ ffmpeg -i <video> -ss <m4a_offset> -t <duration> -i <audio_file> \
   -y <output>
 ```
 
+### 9. 多機位切換（可選）
+
+當使用者提供多個機位的影片時：
+
+```bash
+python3 scripts/multicam_switch.py <cam1> <cam2> [cam3] [-o output.mp4] [--list-only]
+```
+
+流程：
+1. 音訊同步 — 能量包絡交叉相關找各機位偏移
+2. Speaker Diarization — pyannote-audio 辨識說話者
+3. 機位配對 — 音量能量比對，自動判斷哪個機位拍誰
+4. 切換清單 — 顯示給使用者確認，可微調
+5. 合成影片 — FFmpeg concat filter 合成
+
+需要：`pip3 install pyannote-audio` + 設定 `HF_TOKEN` 環境變數。
+合成後的影片可接入一般流程（字幕、去空拍等）。
+自動同步或配對失敗時，可用 `--offset` 和 `--speaker-map` 手動指定。
+
 ## 字幕樣式預設
 
 ### coolscholar（酷學家）
