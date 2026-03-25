@@ -299,6 +299,16 @@ def ensure_directory(path: Path) -> Path:
     return path
 
 
+def get_video_duration(video_path):
+    """取得影片時長（秒）"""
+    import subprocess, shutil
+    ffprobe = shutil.which('ffprobe')
+    cmd = [ffprobe, '-v', 'error', '-show_entries', 'format=duration',
+           '-of', 'csv=p=0', str(video_path)]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return float(result.stdout.strip())
+
+
 if __name__ == "__main__":
     print("Testing utils.py...")
 

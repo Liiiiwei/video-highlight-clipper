@@ -82,6 +82,9 @@ pip3 install openai-whisper
 
 # 替換音軌（有獨立錄音檔時）
 用這個錄音檔替換影片的聲音：audio.m4a
+
+# 多機位切換
+幫我用這三個機位剪精華：cam1.mp4 cam2.mp4 cam3.mp4
 ```
 
 ## 單獨使用腳本
@@ -139,6 +142,7 @@ video-highlight-clipper/
 │   ├── extract_subtitle_segment.py  # 字幕段落提取
 │   ├── remove_silence.py            # 去空拍
 │   ├── burn_subtitles.py            # 字幕燒錄
+│   ├── multicam_switch.py           # 多機位自動切換
 │   └── utils.py                     # 工具函式
 └── references/         # FFmpeg 和字幕格式參考文件
 ```
@@ -152,6 +156,7 @@ video-highlight-clipper/
 | openai-whisper | 語音轉文字 | 必要 |
 | Claude Code | AI 分析精華 | 建議（也可手動操作） |
 | 源泉圓體 | coolscholar 字幕樣式 | 可選 |
+| pyannote-audio | 說話者辨識（多機位） | 多機位時必要 |
 
 ## 注意事項
 

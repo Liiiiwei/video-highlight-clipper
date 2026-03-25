@@ -9,6 +9,7 @@ import subprocess
 import shutil
 import re
 from pathlib import Path
+from utils import get_video_duration
 
 
 def detect_silences(video_path, noise_db=-30, min_duration=0.4, ffmpeg_path=None):
@@ -60,15 +61,6 @@ def get_speaking_segments(silences, total_duration, padding=0.08):
         segments.append((round(current_pos, 3), round(total_duration, 3)))
 
     return segments
-
-
-def get_video_duration(video_path):
-    """取得影片時長"""
-    ffprobe = shutil.which('ffprobe')
-    cmd = [ffprobe, '-v', 'error', '-show_entries', 'format=duration',
-           '-of', 'csv=p=0', str(video_path)]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return float(result.stdout.strip())
 
 
 def build_trim_concat_filter(segments):
