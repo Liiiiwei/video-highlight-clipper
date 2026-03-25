@@ -45,6 +45,9 @@ tmp/
 *.srt
 test_*.py
 *_test.py
+# tests/ 目錄下的測試檔案例外
+!tests/test_*.py
+!tests/*_test.py
 
 # Logs
 *.log
