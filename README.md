@@ -1,54 +1,70 @@
-# Local Highlight Clipper
+# Video Highlight Clipper
 
-> AI 驅動的本地影片精華剪輯工具，專為 Claude Code 設計。從直播錄影中自動辨識精華片段，剪輯為 Reels 風格短片，並自動生成和燒錄中文字幕。
-
-## 功能
-
-- **Whisper 語音轉錄** — 自動將影片語音轉為 SRT 字幕（支援 GPU 加速）
-- **AI 精華分析** — Claude AI 語義分析找出金句、知識點、情緒高點等精華片段
-- **精確剪輯** — FFmpeg re-encode 模式確保 15-90 秒短片的精確切割
-- **字幕燒錄** — 自動將字幕硬編碼到影片中
-- **字幕後處理** — 合併短字幕、移除語氣詞、修正時間戳重疊
+從長影片中自動找出精華片段，剪輯為短影片並加上字幕。專為 Claude Code 設計。
 
 ## 安裝
 
 ```bash
-git clone https://github.com/op7418/Youtube-clipper-skill.git
+git clone <repo-url>
 cd Youtube-clipper-skill
-bash install_as_skill.sh
 ```
 
-安裝腳本會：
-- 複製檔案到 `~/.claude/skills/local-highlight-clipper/`
-- 安裝 Python 依賴（openai-whisper、pysrt）
-- 檢測系統依賴（FFmpeg、Whisper）
+### 系統需求
 
-## 系統需求
+```bash
+# FFmpeg（含 libass 字幕支援）
+# macOS:
+brew install homebrew-ffmpeg/ffmpeg/ffmpeg
 
-| 依賴 | 用途 | 安裝方式 |
-|------|------|----------|
-| Python 3.8+ | 腳本執行 | 預裝 |
-| FFmpeg (含 libass) | 影片剪輯 + 字幕燒錄 | `brew install ffmpeg` |
-| Whisper | 語音轉文字 | `pip install openai-whisper` |
+# Whisper 語音轉錄
+pip3 install openai-whisper
+```
+
+### 字型（可選）
+
+使用 `coolscholar` 樣式需要安裝[源泉圓體](https://github.com/ButTaiwan/genseki-font)。
 
 ## 使用方式
 
-在 Claude Code 中輸入：
+在 Claude Code 中，進入此專案目錄後直接說：
 
 ```
-幫我把這個直播錄影剪成精華片段：/path/to/video.mp4
+幫我把這個影片剪成精華片段：/path/to/video.mp4
 ```
 
-工具會自動：
-1. 檢測環境依賴
-2. 用 Whisper 轉錄語音為字幕
-3. AI 分析找出精華片段
-4. 讓你選擇要剪的段落
-5. 自動剪輯 + 燒錄字幕
+Claude Code 會自動：
+1. 用 Whisper 轉錄字幕
+2. 分析內容找出精華
+3. 剪輯 + 去空拍 + 上字幕
 
-## 支援格式
+### 也可以單獨使用各腳本
 
-mp4、mkv、mov、flv、ts、webm
+```bash
+# 轉錄
+python3 scripts/transcribe_video.py video.mp4
+
+# 剪輯片段
+python3 scripts/clip_video.py video.mp4 00:15:00 00:16:30 clip.mp4
+
+# 提取對應字幕
+python3 scripts/extract_subtitle_segment.py full.srt 00:15:00 00:16:30 clip.srt
+
+# 去空拍
+python3 scripts/remove_silence.py clip.mp4 clip.srt output.mp4 output.srt
+
+# 燒錄字幕
+python3 scripts/burn_subtitles.py clip.mp4 clip.srt output.mp4 --style coolscholar
+```
+
+## 功能
+
+- **Whisper 轉錄** — 自動產生中文字幕
+- **AI 精華分析** — Claude 語義分析找出金句、知識點、故事
+- **去空拍** — 移除靜音段，保留自然節奏
+- **字幕燒錄** — 支援自訂字型和樣式預設
+- **影片濃縮** — 長片段自動精簡到 60-90 秒
+- **音軌替換** — 可用獨立錄音檔替換影片音軌
+- **9:16 裁切** — 橫式影片轉直式 Reels/Shorts
 
 ## License
 
