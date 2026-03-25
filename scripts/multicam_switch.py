@@ -377,3 +377,106 @@ def compose_video(switch_list, video_paths, offsets, output_path):
     output_size = Path(output_path).stat().st_size / (1024 * 1024)
     print(f"✅ 合成完成: {output_path} ({output_size:.1f} MB)")
     return str(output_path)
+
+
+def parse_offset_arg(offset_str):
+    result = {}
+    for pair in offset_str.split(','):
+        name, value = pair.split('=')
+        result[name.strip()] = float(value.strip())
+    return result
+
+
+def parse_speaker_map_arg(map_str):
+    result = {}
+    for pair in map_str.split(','):
+        speaker, cam = pair.split('=')
+        result[speaker.strip()] = cam.strip()
+    return result
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='多機位自動切換')
+    parser.add_argument('videos', nargs='+', help='機位影片路徑（第一個為基準機位）')
+    parser.add_argument('-o', '--output', default=None, help='輸出影片路徑')
+    parser.add_argument('--list-only', action='store_true', help='只輸出切換清單，不合成')
+    parser.add_argument('--offset', default=None, help='手動偏移，格式: cam2.mp4=1.5')
+    parser.add_argument('--speaker-map', default=None, help='手動配對，格式: SPEAKER_00=cam1.mp4')
+    parser.add_argument('--min-segment', type=float, default=2.0, help='最短片段門檻（秒）')
+    args = parser.parse_args()
+
+    if len(args.videos) < 2:
+        print("❌ 至少需要 2 個機位影片")
+        sys.exit(1)
+
+    for v in args.videos:
+        if not Path(v).exists():
+            print(f"❌ 檔案不存在: {v}")
+            sys.exit(1)
+
+    manual_offsets = parse_offset_arg(args.offset) if args.offset else None
+    manual_map = parse_speaker_map_arg(args.speaker_map) if args.speaker_map else None
+
+    print("📹 階段 1/4：音訊同步")
+    offsets = sync_cameras(args.videos, manual_offsets=manual_offsets)
+
+    print("🎤 階段 2/4：Speaker Diarization")
+    ready, msg = check_diarization_ready()
+    if not ready:
+        print(f"❌ {msg}")
+        sys.exit(1)
+
+    base_video = args.videos[0]
+    temp_dir = tempfile.mkdtemp(prefix='multicam_')
+    try:
+        base_audio = os.path.join(temp_dir, 'base_audio.wav')
+        ffmpeg = shutil.which('ffmpeg')
+        subprocess.run([
+            ffmpeg, '-i', base_video,
+            '-vn', '-ar', '16000', '-ac', '1', '-y', base_audio
+        ], capture_output=True)
+
+        segments = diarize(base_audio)
+
+        if len(set(s['speaker'] for s in segments)) < 2:
+            print("ℹ️ 只偵測到 1 位說話者，不需要多機位切換。")
+            sys.exit(0)
+
+        print("🔗 階段 3/4：機位-說話者配對")
+        duration = get_video_duration(base_video)
+        cam_paths = {Path(v).name: v for v in args.videos}
+        audio_energies = compute_audio_energies(cam_paths, offsets, duration, hop_ms=50)
+        speaker_map, confidence = match_speakers_to_cameras(
+            segments, audio_energies, hop_ms=50, manual_map=manual_map
+        )
+
+        print(f"   配對結果（信心度 {confidence:.2f}）:")
+        for speaker, cam in speaker_map.items():
+            print(f"     {speaker} → {cam}")
+
+        if confidence < 0.6 and not manual_map:
+            print(f"   ⚠️ 信心度偏低，建議用 --speaker-map 手動確認")
+
+        print("📋 階段 4/4：生成切換清單")
+        switches = generate_switch_list(segments, speaker_map, min_segment=args.min_segment)
+        print(format_switch_list_display(switches))
+
+        json_path = args.output.replace('.mp4', '_switches.json') if args.output else 'switch_list.json'
+        cam_names = [Path(v).name for v in args.videos]
+        save_switch_list_json(switches, cam_names, offsets, speaker_map, confidence, json_path)
+        print(f"\n📄 切換清單已存為: {json_path}")
+
+        if args.list_only:
+            print("（--list-only 模式，不合成影片）")
+            return
+
+        output_path = args.output or 'multicam_output.mp4'
+        compose_video(switches, cam_paths, offsets, output_path)
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+if __name__ == '__main__':
+    main()

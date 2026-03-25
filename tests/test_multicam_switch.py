@@ -267,3 +267,54 @@ class TestComposeVideo:
         result = compose_video(switches, video_paths, offsets, output)
         assert os.path.exists(result)
         assert os.path.getsize(result) > 0
+
+
+class TestCLI:
+    def test_parse_offset_flag(self):
+        from multicam_switch import parse_offset_arg
+        result = parse_offset_arg("cam2.mp4=1.5")
+        assert result == {'cam2.mp4': 1.5}
+
+    def test_parse_multiple_offsets(self):
+        from multicam_switch import parse_offset_arg
+        result = parse_offset_arg("cam2.mp4=1.5,cam3.mp4=-0.3")
+        assert result == {'cam2.mp4': 1.5, 'cam3.mp4': -0.3}
+
+    def test_parse_speaker_map_flag(self):
+        from multicam_switch import parse_speaker_map_arg
+        result = parse_speaker_map_arg("SPEAKER_00=cam1.mp4,SPEAKER_01=cam2.mp4")
+        assert result == {'SPEAKER_00': 'cam1.mp4', 'SPEAKER_01': 'cam2.mp4'}
+
+
+class TestErrorHandling:
+    def test_sync_low_correlation_returns_zero(self):
+        from multicam_switch import cross_correlate_envelopes
+        env1 = np.random.rand(100)
+        env2 = np.random.rand(100)
+        offset, corr = cross_correlate_envelopes(env1, env2, hop_ms=50)
+        assert corr < 0.5
+
+    def test_more_speakers_than_cameras(self):
+        from multicam_switch import match_speakers_to_cameras
+        diarization = [
+            {'start': 0.0, 'end': 10.0, 'speaker': 'A'},
+            {'start': 10.0, 'end': 20.0, 'speaker': 'B'},
+            {'start': 20.0, 'end': 30.0, 'speaker': 'C'},
+        ]
+        audio_energies = {
+            'cam1.mp4': np.array([0.8] * 10 + [0.1] * 10 + [0.3] * 10),
+            'cam2.mp4': np.array([0.1] * 10 + [0.8] * 10 + [0.5] * 10),
+        }
+        speaker_map, confidence = match_speakers_to_cameras(
+            diarization, audio_energies, hop_ms=1000
+        )
+        assert len(speaker_map) == 3
+        assert all(v in ['cam1.mp4', 'cam2.mp4'] for v in speaker_map.values())
+
+    def test_format_time_uses_utils(self):
+        from multicam_switch import format_switch_list_display
+        switches = [
+            {'start': 0.0, 'end': 65.5, 'speaker': 'A', 'camera': 'cam1.mp4', 'warning': None},
+        ]
+        text = format_switch_list_display(switches)
+        assert '01:05' in text
